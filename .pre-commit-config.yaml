@@ -1,0 +1,23 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com for more information
+# Install: pip install pre-commit && pre-commit install
+
+repos:
+  # Secret scanning using detect-secrets (Yelp) - battle-tested solution
+  # https://github.com/Yelp/detect-secrets
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            .*\.parquet$|
+            .*\.lock$|
+            poetry\.lock$|
+            .*\.log$|
+            source_data/.*|
+            htmlcov/.*|
+            coverage\.xml
+          )
+
