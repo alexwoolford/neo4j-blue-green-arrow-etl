@@ -2,6 +2,10 @@
 
 The orchestrator provides a production-ready service for managing blue/green deployments automatically.
 
+> **Note**: The **Prefect orchestrator** (`orchestrator_prefect.py`) is recommended for demos and production use. It provides a production-grade UI and full observability. See [docs/PREFECT_SETUP.md](PREFECT_SETUP.md) for the Prefect-based orchestrator.
+
+This document describes the original orchestrator (`orchestrator.py`) which runs without Prefect.
+
 ## Features
 
 1. **File Watcher**: Continuously monitors for new snapshot directories

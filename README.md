@@ -11,8 +11,46 @@ This project demonstrates blue/green database deployments using Neo4j Arrow load
 ## Prerequisites
 
 - **Conda** (Miniconda or Anaconda) - [Install here](https://docs.conda.io/en/latest/miniconda.html)
-- **Neo4j** instance running with Arrow protocol enabled (port 8491) and Bolt protocol (port 7687)
+- **Neo4j Enterprise Edition** - This solution uses Neo4j Enterprise Edition features:
+  - **Multi-database support** - Each customer deployment is a separate database
+  - **Database aliases** - Enable zero-downtime blue/green deployments
+  - **Arrow protocol** - High-performance bulk loading (port 8491)
+  - **Online backups** - Available via `neo4j-admin database backup`
+  - **Clustering support** - Fully cluster-compatible (all operations use Bolt protocol)
 - **Git LFS** (Large File Storage) - Required for cloning Parquet files. [Install here](https://git-lfs.github.com/)
+
+> **📘 Enterprise Features**: This solution uses **only** native Neo4j Enterprise Edition features. No third-party plugins or workarounds. See [docs/ENTERPRISE_REVIEW.md](docs/ENTERPRISE_REVIEW.md) for details.
+
+## Quick Demo (3 Commands)
+
+This is the core demo workflow:
+
+```bash
+# 1. Start Prefect server (Terminal 1)
+poetry run prefect server start
+
+# 2. Run the supervisor process (Terminal 2)
+python scripts/orchestrator_prefect.py --run
+
+# 3. Simulate new data arriving (Terminal 3)
+python scripts/simulate_snapshot.py --customer customer1
+```
+
+**That's it!** The orchestrator will automatically:
+- Detect the new snapshot within 30 seconds
+- Load it into Neo4j using Arrow protocol
+- Switch the alias to the new database (if it's the latest)
+- Clean up old databases
+
+View the Prefect UI at `http://localhost:4200` to see the workflow in action.
+
+> **Prerequisites**: Before running the demo, ensure:
+> - Dependencies installed: `poetry install`
+> - Neo4j is running (Enterprise Edition with Arrow protocol on port 8491)
+> - Demo data is set up: `python scripts/setup_demo_data.py`
+> - Environment is configured: `export NEO4J_PASSWORD=your_password`
+
+See [docs/DEMO.md](docs/DEMO.md) for detailed demonstration scenarios.
 
 ## Initial Setup
 
@@ -259,14 +297,11 @@ python scripts/manage_aliases.py create customer1 customer1-1767741527
 # Or in GDS: database='customer1'
 ```
 
-## Demonstration
+## Additional Demo Options
 
-See [docs/DEMO.md](docs/DEMO.md) for complete demonstration guide with two approaches:
+### Manual Demo (Sequential)
 
-1. **Manual Demo** (`demo_workflow.py`) - Sequential, controlled, good for presentations
-2. **Orchestrator Demo** (`orchestrator.py`) - Automatic, can be parallel, production-like
-
-### Quick Demo
+For controlled, step-by-step demonstrations:
 
 ```bash
 # Generate demo data
@@ -276,38 +311,46 @@ python scripts/setup_demo_data.py
 python scripts/demo_workflow.py
 ```
 
-### Parallel Loading
+### Original Orchestrator (Without Prefect)
 
-By default, the orchestrator uses **1 worker** (sequential loading). To load multiple databases in parallel:
-
-```bash
-# Load up to 3 databases simultaneously
-python scripts/orchestrator.py --workers 3
-```
-
-## Orchestration Service (Production-Ready)
-
-For production use, see [docs/ORCHESTRATOR.md](docs/ORCHESTRATOR.md) for a file-watcher based orchestration service that:
-
-- **Automatically detects** new snapshots
-- **Queues and loads** them with concurrency control (configurable workers)
-- **Health checks** Neo4j before loading
-- **Auto-switches** aliases to latest deployments
-- **Auto-cleans** old databases (keeps newest 2)
+The original orchestrator (without Prefect UI) is still available. See [docs/ORCHESTRATOR.md](docs/ORCHESTRATOR.md) for details.
 
 ```bash
 # Start the orchestrator (sequential - 1 worker)
 python scripts/orchestrator.py
 
-# Start with parallel loading (3 workers)
-python scripts/orchestrator.py --workers 3
-
 # In another terminal, simulate dropping a new snapshot
 python scripts/simulate_snapshot.py --customer customer1
 ```
 
-This addresses:
-- **OOM Issues**: Arrow loader + controlled concurrency + queue management
-- **Long Load Times**: Arrow loader performance + parallel workers
-- **Automation**: No manual intervention needed
+## Production Operations
+
+### Backup and Restore
+
+For production deployments, see [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md) for:
+- Neo4j Enterprise backup procedures using `neo4j-admin database backup`
+- Backup scheduling and retention strategies
+- Restore procedures and point-in-time recovery
+- Integration with blue/green deployment pattern
+
+### Cluster Deployment
+
+This solution is fully cluster-compatible. See [docs/CLUSTER_DEPLOYMENT.md](docs/CLUSTER_DEPLOYMENT.md) for:
+- Cluster configuration and connection setup
+- Backup server configuration in clusters
+- High availability considerations
+- Performance and monitoring in cluster environments
+
+### Enterprise Edition Features
+
+This solution leverages Neo4j Enterprise Edition features:
+- ✅ **Multi-database support** - Isolated databases per customer deployment
+- ✅ **Database aliases** - Zero-downtime cutover between deployments
+- ✅ **Arrow protocol** - High-performance bulk data loading
+- ✅ **Online backups** - Backup databases while running
+- ✅ **Cluster support** - Fully compatible with Neo4j clusters
+- ✅ **ACID compliance** - Transactional consistency guaranteed
+- ✅ **Concurrency control** - Automatic retry and deadlock handling
+
+See [docs/ENTERPRISE_REVIEW.md](docs/ENTERPRISE_REVIEW.md) for a comprehensive review of Enterprise Edition alignment.
 

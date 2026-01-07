@@ -1,20 +1,104 @@
 # Demonstration Guide
 
-This guide shows you how to demonstrate the blue/green deployment system in two ways:
+This guide shows you how to demonstrate the blue/green deployment system. The **recommended approach** uses Prefect for production-grade observability.
 
-1. **Manual Demo** (`demo_workflow.py`) - Sequential, controlled, good for presentations
-2. **Orchestrator Demo** (`orchestrator.py`) - Automatic, can be parallel, production-like
+## Core Demo (3 Commands)
+
+This is the primary demo workflow:
+
+```bash
+# 1. Start Prefect server (Terminal 1)
+poetry run prefect server start
+
+# 2. Run the supervisor process (Terminal 2)
+python scripts/orchestrator_prefect.py --run
+
+# 3. Simulate new data arriving (Terminal 3)
+python scripts/simulate_snapshot.py --customer customer1
+```
+
+**What happens:**
+- The orchestrator detects the new snapshot within 30 seconds
+- It loads the data into Neo4j using Arrow protocol
+- It switches the alias to the new database (if it's the latest)
+- It cleans up old databases
+- All activity is visible in the Prefect UI at `http://localhost:4200`
 
 ## Prerequisites
 
 Before starting, ensure you have:
-- Neo4j running with Arrow protocol (port 8491) and Bolt (port 7687)
+- Neo4j Enterprise Edition running with Arrow protocol (port 8491) and Bolt (port 7687)
 - Demo data generated: `python scripts/setup_demo_data.py`
-- Environment activated: `conda activate neo4j-blue-green-arrow-etl`
+- Environment configured: `export NEO4J_PASSWORD=your_password`
+- Dependencies installed: `poetry install`
 
-## Option 1: Manual Demo (Sequential)
+## Option 1: Prefect Orchestrator (Recommended) ⭐
 
-**Best for**: Presentations, controlled demonstrations, understanding the flow
+**Best for**: Production-grade demos with full observability
+
+### Quick Start
+
+```bash
+# Terminal 1: Start Prefect server
+poetry run prefect server start
+
+# Terminal 2: Run the supervisor
+python scripts/orchestrator_prefect.py --run
+
+# Terminal 3: Simulate new data
+python scripts/simulate_snapshot.py --customer customer1
+```
+
+### What You'll See
+
+1. **Prefect UI** (`http://localhost:4200`):
+   - Visual workflow graphs
+   - Task execution timeline
+   - Real-time logs
+   - Retry history
+   - Error details
+
+2. **Terminal Output**:
+   - Snapshot discovery
+   - Loading progress
+   - Alias switching
+   - Cleanup operations
+
+### Configuration
+
+The orchestrator processes **one snapshot at a time** by default (safer for Neo4j). This is controlled in `config.yaml`:
+
+```yaml
+orchestrator:
+  max_concurrent_loads: 1  # Sequential processing (one at a time)
+  scan_interval: 30        # Seconds between snapshot scans
+```
+
+### Simulate Multiple Snapshots
+
+While the orchestrator is running, you can drop multiple snapshots:
+
+```bash
+# Terminal 3: Drop snapshots for different customers
+python scripts/simulate_snapshot.py --customer customer1
+python scripts/simulate_snapshot.py --customer customer2
+python scripts/simulate_snapshot.py --customer customer3
+```
+
+The orchestrator will process them **one at a time** (sequential), ensuring Neo4j isn't overwhelmed.
+
+### View in Prefect UI
+
+Open `http://localhost:4200` to see:
+- All workflow runs
+- Task status (running, completed, failed)
+- Execution logs
+- Retry attempts
+- Task dependencies
+
+## Option 2: Manual Demo (Sequential)
+
+**Best for**: Step-by-step demonstrations, understanding the flow
 
 This approach loads databases **one at a time** sequentially, making it easy to follow and explain.
 
@@ -27,21 +111,10 @@ python scripts/demo_workflow.py
 ### What It Does
 
 1. **Phase 1 - Blue Deployments**: Loads initial databases for all 3 customers and switches aliases
-   - `customer1-1767741427` → alias `customer1`
-   - `customer2-1767741427` → alias `customer2`
-   - `customer3-1767741427` → alias `customer3`
-
 2. **Phase 2 - Green Deployments**: Loads new databases but **doesn't switch** aliases yet
-   - `customer1-1767741527` (loaded, but alias still points to blue)
-   - `customer2-1767741527` (loaded, but alias still points to blue)
-   - `customer3-1767741527` (loaded, but alias still points to blue)
-
 3. **Phase 3 - Cutover**: Switches all aliases to the green (latest) deployments
-   - All aliases now point to the `-1767741527` databases
 
 ### Step-by-Step Manual Demo
-
-If you want to demonstrate each step manually:
 
 ```bash
 # 1. Load blue deployment for customer1 and switch alias
@@ -58,130 +131,31 @@ python scripts/manage_aliases.py list-aliases
 
 # 5. Switch alias to green (cutover)
 python scripts/manage_aliases.py create customer1 customer1-1767741527
-
-# 6. Query using alias (now points to green)
-# In Neo4j Browser: USE customer1
 ```
 
-### Verify the Demo
+## Option 3: Original Orchestrator (Without Prefect)
+
+**Best for**: Simple automation without UI
+
+The original orchestrator (without Prefect) is still available. See [docs/ORCHESTRATOR.md](docs/ORCHESTRATOR.md) for details.
 
 ```bash
-# List all databases and their status
-python scripts/manage_aliases.py list-databases
-
-# List aliases and their targets
-python scripts/manage_aliases.py list-aliases
-```
-
-## Option 2: Orchestrator Demo (Automatic, Can Be Parallel)
-
-**Best for**: Production-like scenarios, testing automatic behavior, parallel loading
-
-The orchestrator can load databases **in parallel** if you configure multiple workers.
-
-### Current Configuration
-
-In `config.yaml`:
-```yaml
-orchestrator:
-  num_workers: 1  # Sequential loading (one at a time)
-```
-
-**With 1 worker**: Loads one database at a time (sequential, safer for large loads)
-
-**With multiple workers**: Can load multiple databases in parallel (faster, but more resource-intensive)
-
-### Run Orchestrator (Sequential - 1 Worker)
-
-```bash
-# Uses config.yaml setting (1 worker = sequential)
+# Start the orchestrator (sequential - 1 worker)
 python scripts/orchestrator.py
+
+# In another terminal, simulate dropping a new snapshot
+python scripts/simulate_snapshot.py --customer customer1
 ```
 
-**The orchestrator runs continuously** until you stop it with `Ctrl+C`. It will:
-- **Continuously watch** for new snapshots every 30 seconds
-- Queue them for loading
-- Load them one at a time (because num_workers=1)
-- Automatically switch aliases to latest deployments
-- Clean up old databases (keeps newest 2)
+## Sequential Processing (Default)
 
-**To stop**: Press `Ctrl+C` in the terminal running the orchestrator.
-
-### Run Orchestrator (Parallel - Multiple Workers)
-
-```bash
-# Override config to use 3 workers (parallel loading)
-python scripts/orchestrator.py --workers 3
-```
-
-With 3 workers, the orchestrator can load **up to 3 databases simultaneously**:
-- Worker 1 might load `customer1-1767741427`
-- Worker 2 might load `customer2-1767741427`
-- Worker 3 might load `customer3-1767741427`
-
-All happening **at the same time**!
-
-### Simulate New Snapshot Drop
-
-**The orchestrator runs continuously**, so you can demonstrate live snapshot detection:
-
-1. **Start the orchestrator** in one terminal (it will keep running):
-   ```bash
-   python scripts/orchestrator.py
-   ```
-   You'll see: `✅ Orchestrator started. Press Ctrl+C to stop.`
-
-2. **In another terminal**, drop a new snapshot:
-   ```bash
-   # Create a new snapshot by copying existing one
-   python scripts/simulate_snapshot.py --customer customer1
-   
-   # Or manually:
-   cp -r data/customer1/1767741427 data/customer1/$(date +%s)
-   ```
-
-3. **Watch the orchestrator terminal** - within 30 seconds (or your scan_interval), you'll see:
-   - `📦 Discovered new snapshot: customer1/1767763140`
-   - `🔄 Worker X: Loading...`
-   - `✅ Worker X: Loaded...`
-   - `🔄 Worker X: Switching alias...`
-   - `🗑️ Worker X: Dropping old database...`
-
-The orchestrator will:
-1. Detect the new snapshot within 30 seconds (at the next scan)
-2. Queue it for loading
-3. Load it when a worker is available
-4. Switch alias if it's the latest
-5. Clean up old databases
-
-**You can drop multiple snapshots** while the orchestrator is running, and it will process them all!
-
-### Monitor the Orchestrator
-
-Watch the logs to see:
-- Snapshot discovery
-- Task queuing
-- Worker activity
-- Loading progress
-- Health checks
-- Cleanup operations
-
-Logs are in `logs/blue_green_etl_YYYYMMDD_HHMMSS.log`
-
-## Comparison: Sequential vs Parallel
-
-### Sequential (num_workers: 1)
+The orchestrator processes snapshots **one at a time** by default. This is:
 - ✅ **Safer**: Won't overwhelm Neo4j
 - ✅ **Easier to follow**: One thing at a time
 - ✅ **Better for demos**: Clear progression
-- ❌ **Slower**: Takes longer to load all databases
+- ✅ **Prevents memory issues**: Avoids "Arrow process aborted" errors
 
-### Parallel (num_workers: 3+)
-- ✅ **Faster**: Multiple databases load simultaneously
-- ✅ **Production-like**: Real-world scenarios
-- ✅ **Efficient**: Better resource utilization
-- ⚠️ **Resource-intensive**: Requires more memory/CPU
-- ⚠️ **Harder to follow**: Multiple things happening at once
+You can increase `max_concurrent_loads` in `config.yaml` if needed, but sequential (1) is recommended for demos.
 
 ## Demonstration Scenarios
 
@@ -215,28 +189,30 @@ python scripts/manage_aliases.py create customer1 customer1-1767741527
 # (Orchestrator does this automatically, or use cleanup_demo.py)
 ```
 
-### Scenario 2: Automatic Orchestration Demo
+### Scenario 2: Prefect Orchestration Demo
 
-**Goal**: Show automatic detection and loading
+**Goal**: Show automatic detection and loading with full observability
 
 ```bash
-# 1. Start orchestrator with 2 workers (parallel) - it runs continuously
-python scripts/orchestrator.py --workers 2
+# 1. Start Prefect server (Terminal 1)
+poetry run prefect server start
+
+# 2. Run orchestrator (Terminal 2) - it runs continuously
+python scripts/orchestrator_prefect.py --run
 # Leave this running - it will keep watching for new snapshots
 
-# 2. In another terminal, drop new snapshots (while orchestrator is running)
+# 3. In Terminal 3, drop new snapshots (while orchestrator is running)
 python scripts/simulate_snapshot.py --customer customer1
 python scripts/simulate_snapshot.py --customer customer2
 python scripts/simulate_snapshot.py --customer customer3
 
-# 3. Watch orchestrator terminal automatically:
-#    - Detect snapshots (within 30 seconds)
-#    - Queue them
-#    - Load them in parallel (2 at a time)
-#    - Switch aliases
-#    - Clean up old databases
+# 4. Watch Prefect UI (http://localhost:4200):
+#    - See snapshots detected (within 30 seconds)
+#    - Watch tasks execute (health check, load, switch alias, cleanup)
+#    - View logs and execution timeline
+#    - See retry attempts if any
 
-# 4. Stop orchestrator when done: Press Ctrl+C in the orchestrator terminal
+# 5. Stop orchestrator when done: Press Ctrl+C in Terminal 2
 ```
 
 ### Scenario 3: Health Check Demo
@@ -244,33 +220,35 @@ python scripts/simulate_snapshot.py --customer customer3
 **Goal**: Show how orchestrator handles Neo4j under pressure
 
 ```bash
-# 1. Start orchestrator (runs continuously)
-python scripts/orchestrator.py
+# 1. Start Prefect server (Terminal 1)
+poetry run prefect server start
+
+# 2. Run orchestrator (Terminal 2) - it runs continuously
+python scripts/orchestrator_prefect.py --run
 # Leave this running
 
-# 2. Manually create many databases to trigger health check
+# 3. Manually create many databases to trigger health check
 # (Or load very large datasets)
 
-# 3. In another terminal, try to drop new snapshot
+# 4. In Terminal 3, try to drop new snapshot
 python scripts/simulate_snapshot.py --customer customer1
 
-# 4. Watch orchestrator terminal:
-#    - Detect snapshot
-#    - Queue it
-#    - Health check fails (too many databases)
-#    - Wait and retry later (after health_check_retry_delay)
+# 5. Watch Prefect UI:
+#    - See snapshot detected
+#    - Watch health check task fail (too many databases)
+#    - See retry logic wait and retry later
 #    - Eventually load when healthy
 
-# 5. Stop orchestrator when done: Press Ctrl+C
+# 6. Stop orchestrator when done: Press Ctrl+C in Terminal 2
 ```
 
 ## Tips for Presentations
 
-1. **Start Simple**: Use `demo_workflow.py` for clear, sequential demonstration
-2. **Show Aliases**: Use `python scripts/manage_aliases.py list-aliases` to show alias targets
-3. **Query Examples**: Show queries work before and after cutover
-4. **Parallel Demo**: Use `--workers 3` to show parallel loading capability
-5. **Automatic Demo**: Use orchestrator to show production-like automation
+1. **Start with Prefect**: Use the 3-command demo for production-grade observability
+2. **Show Prefect UI**: Demonstrate the visual workflow and task execution
+3. **Show Aliases**: Use `python scripts/manage_aliases.py list-aliases` to show alias targets
+4. **Query Examples**: Show queries work before and after cutover
+5. **Automatic Demo**: Show how orchestrator automatically detects and processes snapshots
 
 ## Troubleshooting
 

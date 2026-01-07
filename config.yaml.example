@@ -23,6 +23,7 @@ worker:
 
 orchestrator:
   num_workers: 1  # Number of concurrent load workers (1 = sequential, safer for large loads)
+  max_concurrent_loads: 1  # Maximum concurrent database loads (1 = sequential, safer for Neo4j)
   scan_interval: 30  # Seconds between snapshot scans
   max_databases: 50  # Maximum databases before health check fails
   heap_threshold_percent: 85  # JVM heap usage threshold (0-100) - critical for Arrow operations
