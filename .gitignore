@@ -48,9 +48,6 @@ logs/
 # Orchestrator status file
 orchestrator_status.json
 
-# Detect-secrets baseline (contains known false positives)
-.secrets.baseline
-
 # Testing
 .pytest_cache/
 .coverage
